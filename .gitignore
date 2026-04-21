@@ -5,6 +5,7 @@ build/
 dist/
 wheels/
 *.egg-info
+Retos2026
 
 # Virtual environments
 .venv
