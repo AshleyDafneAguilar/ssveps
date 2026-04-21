@@ -1,53 +1,59 @@
 import pandas as pd
-
 import os
 import subprocess
+import numpy as np
 
 def procesar_archivos_rar(rar_path='senales.rar'):
-    # Extraer el contenido
     print(f"Extrayendo archivos de {rar_path}...")
-    try:
-        from unrar import rarfile
-        with rarfile.RarFile(rar_path) as rf:
-            rf.extractall()
-    except Exception as e:
-        print(f"Error detectado al intentar usar la librería python (puede faltar libunrar.so): {e}")
-        print("Intentando extracción mediante comando por defecto en Bash...")
-        try:
-            subprocess.run(['unrar', 'e', '-y', rar_path], check=True)
-        except Exception as e_sub:
-            print("No se encontró comando de sistema unrar:", e_sub)
-            try:
-                subprocess.run(['./rar/unrar', 'e', '-y', rar_path], check=True)
-            except Exception as e_local:
-                pass
-            print("Extracción finalizada (asumiendo que los archivos ya pueden estar en el directorio).")
+    
+    # Agregar la ruta local donde descargamos el binario para no requerir permisos sudo de apt
+    import sys
+    os.environ["PATH"] += os.pathsep + os.path.join(os.path.dirname(__file__), 'rar')
 
-    # Procesar los 5 archivos CSV
+    try:
+        # Intento de extracción usando el binario unrar (sistema o local)
+        subprocess.run(['unrar', 'e', '-y', rar_path], check=True)
+    except Exception as e:
+        print(f"Error con unrar de sistema: {e}. Intentando otros métodos...")
+        try:
+            subprocess.run(['rar', 'e', '-y', rar_path], check=True)
+        except Exception as e2:
+            print(f"Fallo extracción rar por comando: {e2}. Usando rarfile si disponible.")
+            try:
+                from unrar import rarfile
+                with rarfile.RarFile(rar_path) as rf:
+                    rf.extractall()
+            except:
+                print("Asegúrate de tener rar instalado o los archivos ya extraídos en la carpeta.")
+
+    # Procesar los 5 archivos CSV solicitados
     for i in range(1, 6):
         nombre_archivo = f'senal{i}.csv'
-        nombre_salida = f'senal{i}_9canales.csv'
+        nombre_salida = f'senal{i}_procesada.csv'
         
         if os.path.exists(nombre_archivo):
-            print(f"Procesando {nombre_archivo}...")
-            # Leer el CSV sin encabezado. El original suele tener 10 filas continuas
-            df = pd.read_csv(nombre_archivo, header=None)
+            print(f"--- Procesando {nombre_archivo} ---")
             
-            # Tomamos las últimas 9 filas (ignorando el tiempo/baseline) y trasponemos 
-            # Si el csv vino con formato largo, tomamos las últimas 9 columnas.
-            if df.shape[0] >= 9 and df.shape[1] > df.shape[0]:
-                df_canales = df.iloc[-9:, :].T
+            # Cargamos el archivo. 
+            df_raw = pd.read_csv(nombre_archivo, header=None)
+            
+            # Lógica de extracción de los canales
+            # En EEG la cantidad de muestras de tiempo es mayor a la cantidad de canales (tiempo >> canales)
+            if df_raw.shape[0] >= df_raw.shape[1]:
+                # Los datos están en forma (Muestras, Canales)
+                df_canales = df_raw.iloc[:, -9:]
             else:
-                df_canales = df.iloc[:, -9:]
-                
-            # Nombrar los canales
+                # Si los datos están transpuestos (Canales, Muestras), trasponemos para obtener columnas
+                df_canales = df_raw.T.iloc[:, -9:]
+
+            # Renombrar columnas para identificar el Canal (p.ej "Canal_8")
             df_canales.columns = [f'Canal_{j}' for j in range(1, 10)]
             
-            # Guardar el CSV procesado
+            # Guardamos una copia limpia para trabajar
             df_canales.to_csv(nombre_salida, index=False)
-            print(f"Guardado exitosamente {nombre_salida} con {df_canales.shape[0]} datos por canal.")
+            
         else:
-            print(f"Archivo {nombre_archivo} no encontrado después de la extracción.")
+            print(f"Error: No se encontró {nombre_archivo}. Revisa la extracción del .rar.")
 
 if __name__ == "__main__":
     procesar_archivos_rar()
